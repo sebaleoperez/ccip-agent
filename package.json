@@ -1,0 +1,44 @@
+{
+  "name": "ccip-transfer-tool",
+  "version": "1.0.0",
+  "description": "CCIP token transfer tool with MCP server integration",
+  "main": "dist/client.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/client.ts",
+    "server": "tsx src/tool-server.mts",
+    "dev": "tsx --watch src/client.ts",
+    "dev:server": "tsx --watch src/tool-server.mts",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint src/**/*.{ts,mts}",
+    "format": "prettier --write src/**/*.{ts,mts}"
+  },
+  "keywords": [
+    "ccip",
+    "chainlink",
+    "cross-chain",
+    "mcp",
+    "token-transfer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@chainlink/ccip-js": "^0.2.5",
+    "@modelcontextprotocol/sdk": "^1.14.0",
+    "dotenv": "^17.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "viem": "^2.31.6",
+    "zod": "^3.25.71"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.10",
+    "@typescript-eslint/eslint-plugin": "^8.35.1",
+    "@typescript-eslint/parser": "^8.35.1",
+    "eslint": "^9.30.1",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.3"
+  }
+}

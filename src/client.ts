@@ -59,7 +59,7 @@ function promptUser(prompt: string): Promise<string> {
 /**
  * Wrapper for MCP tool calls with timeout handling
  */
-async function callToolWithTimeout(mcpClient: Client, toolName: string, args: any, timeoutMs = 300000): Promise<any> {
+async function callToolWithTimeout(mcpClient: Client, toolName: string, args: any, timeoutMs = 3000000): Promise<any> {
   return new Promise(async (resolve, reject) => {
     const timeoutId = setTimeout(() => {
       reject(new Error(`Tool '${toolName}' timed out after ${timeoutMs/1000} seconds`));
@@ -114,20 +114,21 @@ async function main() {
   • helloWorld(): returns a simple greeting
   • getCurrentTime(): returns the current time in ISO format
   • moveToken({ tokenAddress, amount, destinationAccount }): moves a token between chains (may take several minutes)
+  • help(): returns instructions on how to use the tools
 
-IMPORTANT INSTRUCTIONS:
-- When you need to use a tool, output ONLY the tool command on a single line:
-  TOOL: <toolName> <JSON arguments>
-- Do NOT add any additional text on the same line or immediately after the tool command
-- After the tool executes and returns a result, then provide your helpful summary
-- For successful token transfers, confirm the transaction details to the user
-- Only use tools when absolutely necessary to answer the user's question
+  IMPORTANT INSTRUCTIONS:
+  - When you need to use a tool, output ONLY the tool command on a single line:
+    TOOL: <toolName> <JSON arguments>
+  - Do NOT add any additional text on the same line or immediately after the tool command
+  - After the tool executes and returns a result, then provide your helpful summary
+  - For successful token transfers, confirm the transaction details to the user
+  - Only use tools when absolutely necessary to answer the user's question
 
-EXAMPLES:
-Good: TOOL: moveToken { "tokenAddress": "0x123...", "amount": 10, "destinationAccount": "0x456..." }
-Bad: TOOL: moveToken({ "tokenAddress": "0x123..." }) The transaction will be processed...
+  EXAMPLES:
+  Good: TOOL: moveToken { "tokenAddress": "0x123...", "amount": 10, "destinationAccount": "0x456..." }
+  Bad: TOOL: moveToken({ "tokenAddress": "0x123..." }) The transaction will be processed...
 
-Note: Cross-chain transfers can take 5+ minutes to complete due to blockchain confirmation times.`
+  Note: Cross-chain transfers can take 5+ minutes to complete due to blockchain confirmation times.`
   ];
 
   while (true) {
@@ -241,25 +242,7 @@ Note: Cross-chain transfers can take 5+ minutes to complete due to blockchain co
 
       // Add tool result to history and get follow-up from LLM
       history.push(`Tool result for ${toolName}: ${output}`);
-      
-      // Add instruction to prevent unnecessary tool chaining
-      const followUpPrompt = history.join("\n") + "\n\nProvide a helpful summary of the result to the user. Do not call any additional tools.";
-      
-      try {
-        const followUp = await callLLM(followUpPrompt);
-        console.log(`Assistant: ${followUp}`);
         
-        // Check if the LLM is trying to call another tool (it shouldn't)
-        if (followUp.startsWith("TOOL:")) {
-          console.log("Assistant: The token transfer has been completed successfully! The transaction details are shown above.");
-          history.push(`Assistant: The token transfer has been completed successfully! The transaction details are shown above.`);
-        } else {
-          history.push(`Assistant: ${followUp}`);
-        }
-      } catch (err: any) {
-        console.error("Error getting LLM follow-up:", err.message);
-        break;
-      }
     } else {
       history.push(`Assistant: ${llmReply}`);
     }

@@ -25,12 +25,142 @@ async function start() {
   const app = express();
   app.use(express.json());
 
-  // 2. Session storage - each session gets its own server instance
+  // 2. Create the MCP server and register the tool
+  const server = new McpServer({ name: "tool-server", version: "1.0.0" });
+  
+  console.log("🔧 Registering tools...");
+  
+  server.registerTool(
+    "helloWorld",
+    {
+      title: "Hello World",
+      description: "Returns a simple greeting",
+      inputSchema: {},
+    },
+    async () => {
+      console.log("📞 helloWorld tool called");
+      return { content: [{ type: "text", text: "Hello, world!!" }] };
+    }
+  );
+  console.log("✅ Registered helloWorld tool");
+
+  // Register the getCurrentTime tool
+  server.registerTool(
+    "getCurrentTime",
+    {
+      title: "Get Current Time",
+      description: "Returns the current time in ISO format",
+      inputSchema: {},
+    },
+    async () => {
+      console.log("📞 getCurrentTime tool called");
+      return { content: [{ type: "text", text: new Date().toISOString() }] };
+    }
+  );
+  console.log("✅ Registered getCurrentTime tool");
+
+  // Register the token movement tool
+  server.registerTool(
+    "moveToken",
+    {
+      title: "Move Token",
+      description: "Moves a token from Sepolia to a Arbitrum Sepolia",
+      inputSchema: {
+        tokenAddress: z.string().describe("The address of the token to move in the origin chain"),
+        amount: z.number().describe("The amount of tokens to move, you should have enough balance"),
+        destinationAccount: z.string().describe("The address of the destination account"),
+      },
+    },
+    async (input) => {      
+
+      console.log("🔹 moveToken tool called with input:", input);
+
+      let response = "";
+
+      dotenv.config();
+
+      const {
+          RPC_URL,
+          PRIVATE_KEY,
+          ROUTER_ADDRESS,
+          DESTINATION_CHAIN_SELECTOR
+      } = process.env;
+
+      const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`);
+      
+      const publicClient = createPublicClient({
+        chain: sepolia,
+        transport: http(RPC_URL)
+      });
+      const walletClient = createWalletClient({
+        chain: sepolia,
+        transport: http(RPC_URL),
+        account
+      });
+
+      const router = ROUTER_ADDRESS as `0x${string}`;
+      const token = input.tokenAddress as `0x${string}`;
+      const destination = input.destinationAccount as `0x${string}`;
+      const chainSelector = DESTINATION_CHAIN_SELECTOR as string;
+      const amount = BigInt(input.amount);
+
+      // 0) Check token balance
+      console.log('🔍 Checking token balance...');
+      const balance = await publicClient.readContract({
+        address: token,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [account.address]
+      }) as bigint;
+      console.log(`🔍 Token balance for ${account.address}: ${balance.toString()}`);
+      if (balance < amount) {
+        response = `❌ Insufficient token balance: you have ${balance}, but need ${amount}`;
+      }
+      else {
+        // 1) Approve Router to move your tokens
+        console.log('✅ Approving router...');
+        const ccip = CCIP.createClient();
+        await ccip.approveRouter({
+          client: walletClient,
+          routerAddress: router,
+          tokenAddress: token,
+          amount,
+          waitForReceipt: true
+        });
+        console.log('✅ Router approved.');
+
+        // 2) Send the cross-chain transfer
+        console.log('🚀 Sending transfer...');
+        const { txHash, messageId } = await ccip.transferTokens({
+          client: walletClient,
+          routerAddress: router,
+          tokenAddress: token,
+          amount,
+          destinationAccount: destination,
+          destinationChainSelector: chainSelector
+        });
+        console.log('🚀 Transfer sent. txHash:', txHash);
+        console.log('📨 Message ID:', messageId);
+
+        response = `Moved ${input.amount} tokens from ${input.tokenAddress} to ${input.destinationAccount} on Arbitrum Sepolia with txHash ${txHash} and message ID ${messageId}.`;
+        
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: response,
+          },
+        ],
+      };
+    }
+  );
+
+  // 3. Transport map per session - each session gets its own server instance
   const sessions: Record<string, { transport: StreamableHTTPServerTransport; server: McpServer }> = {};
 
-  console.log("🔧 Setting up MCP server framework...");
-
-  // 3. HTTP endpoint for MCP (POST /rpc)
+  // 4. HTTP endpoint for MCP (POST /rpc)
   app.post("/rpc", async (req: Request, res: Response) => {
     console.log("📨 Received RPC request");
     
@@ -74,56 +204,7 @@ async function start() {
         }
       );
       
-      // Register help tool
-      sessionServer.registerTool(
-        "help",
-        {
-          title: "Help",
-          description: "Shows information about all available tools and how to use them",
-          inputSchema: {},
-        },
-        async () => {
-          console.log("📞 help tool called");
-          const helpText = `
-🤖 **What I Can Help You With**
-
-**📅 Get Current Time**
-   • Just ask me "What time is it?" or "What's the current time?"
-   • I'll provide the current date and time in ISO format
-
-**🔄 Transfer Tokens Between Blockchains**
-   • I can move your tokens from Sepolia to Arbitrum Sepolia using Chainlink CCIP
-   • What I need from you:
-     - Token contract address on Sepolia (starts with 0x...)
-     - Amount of tokens you want to transfer
-     - Destination wallet address on Arbitrum Sepolia (starts with 0x...)
-   
-   • Example request: "Transfer 10 tokens from contract 0xFd57b4ddBf88a4e07fF4e34C487b99af2Fe82a05 to address 0x742d35Cc6634C0532925a3b8D5c9E9A6e3fCa44C"
-   
-   • Important notes:
-     - Make sure you have enough tokens in your wallet
-     - Cross-chain transfers take 5-10 minutes to complete
-     - I'll check your balance before attempting the transfer
-     - You'll get a transaction hash to track the transfer
-
-**💬 General Conversation**
-   • Feel free to ask me questions or just say hello!
-   • I can provide information and have casual conversations
-
-**❓ Need Help?**
-   • Ask me to "show help" or "what can you do?" anytime
-
-📝 **How to Communicate:**
-   • Just talk to me naturally - no special commands needed
-   • Be specific about token addresses and amounts for transfers
-   • I'll guide you through any process step by step
-          `.trim();
-          
-          return { content: [{ type: "text", text: helpText }] };
-        }
-      );
-      
-      // Register moveToken tool
+      // Register moveToken tool (keeping existing implementation)
       sessionServer.registerTool(
         "moveToken",
         {
@@ -160,7 +241,6 @@ async function start() {
           const destination = input.destinationAccount as `0x${string}`;
           const chainSelector = DESTINATION_CHAIN_SELECTOR as string;
           const amount = BigInt(input.amount);
-          
           // 0) Check token balance
           console.log('🔍 Checking token balance...');
           const balance = await publicClient.readContract({
@@ -185,7 +265,6 @@ async function start() {
               waitForReceipt: true
             });
             console.log('✅ Router approved.');
-            
             // 2) Send the cross-chain transfer
             console.log('🚀 Sending transfer...');
             const { txHash, messageId } = await ccip.transferTokens({
@@ -211,8 +290,6 @@ async function start() {
         }
       );
       
-      console.log("✅ Registered tools: helloWorld, getCurrentTime, help, moveToken");
-      
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => sessionId,
         enableDnsRebindingProtection: false,
@@ -229,11 +306,11 @@ async function start() {
     await sessions[sessionId].transport.handleRequest(req, res, req.body);
   });
 
-  // 4. Start the HTTP server
+  // 5. Start the HTTP server
   const PORT = 3001;
   app.listen(PORT, () => {
     console.log(`🔹 MCP HTTP server listening at http://localhost:${PORT}/rpc`);
-    console.log("🔧 Ready to create sessions with tools: helloWorld, getCurrentTime, help, moveToken");
+    console.log("🔧 Registered tools:", ["helloWorld", "getCurrentTime", "moveToken"]);
   });
 }
 
